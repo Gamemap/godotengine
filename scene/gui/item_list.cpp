@@ -671,7 +671,8 @@ void ItemList::gui_input(const Ref<InputEvent> &p_event) {
 #define CAN_SELECT(i) (items[i].selectable && !items[i].disabled)
 #define IS_SAME_ROW(i, row) (i / current_columns == row)
 
-	double prev_scroll = scroll_bar->get_value();
+	double prev_scroll_v = scroll_bar_v->get_value();
+	double prev_scroll_h = scroll_bar_h->get_value();
 
 	Ref<InputEventMouseMotion> mm = p_event;
 	if (defer_select_single >= 0 && mm.is_valid()) {
@@ -773,11 +774,52 @@ void ItemList::gui_input(const Ref<InputEvent> &p_event) {
 			emit_signal(SNAME("empty_clicked"), get_local_mouse_position(), mb->get_button_index());
 		}
 	}
-	if (mb.is_valid() && mb->get_button_index() == MouseButton::WHEEL_UP && mb->is_pressed()) {
-		scroll_bar->set_value(scroll_bar->get_value() - scroll_bar->get_page() * mb->get_factor() / 8);
-	}
-	if (mb.is_valid() && mb->get_button_index() == MouseButton::WHEEL_DOWN && mb->is_pressed()) {
-		scroll_bar->set_value(scroll_bar->get_value() + scroll_bar->get_page() * mb->get_factor() / 8);
+	if (mb.is_valid()) { // Copied from ScrollContainer.
+		if (mb->is_pressed()) {
+			bool scroll_value_modified = false;
+
+			bool v_scroll_hidden = !scroll_bar_v->is_visible();
+			if (mb->get_button_index() == MouseButton::WHEEL_UP) {
+				// By default, the vertical orientation takes precedence. This is an exception.
+				if ((mb->is_shift_pressed()) || v_scroll_hidden) {
+					scroll_bar_h->scroll(-scroll_bar_h->get_page() / 8 * mb->get_factor());
+					scroll_value_modified = true;
+				} else {
+					scroll_bar_v->scroll(-scroll_bar_v->get_page() / 8 * mb->get_factor());
+					scroll_value_modified = true;
+				}
+			}
+			if (mb->get_button_index() == MouseButton::WHEEL_DOWN) {
+				if ((mb->is_shift_pressed()) || v_scroll_hidden) {
+					scroll_bar_h->scroll(scroll_bar_h->get_page() / 8 * mb->get_factor());
+					scroll_value_modified = true;
+				} else {
+					scroll_bar_v->scroll(scroll_bar_v->get_page() / 8 * mb->get_factor());
+					scroll_value_modified = true;
+				}
+			}
+
+			bool h_scroll_hidden = !scroll_bar_h->is_visible();
+			if (mb->get_button_index() == MouseButton::WHEEL_LEFT) {
+				// By default, the horizontal orientation takes precedence. This is an exception.
+				if ((mb->is_shift_pressed()) || h_scroll_hidden) {
+					scroll_bar_v->scroll(-scroll_bar_v->get_page() / 8 * mb->get_factor());
+					scroll_value_modified = true;
+				} else {
+					scroll_bar_h->scroll(-scroll_bar_h->get_page() / 8 * mb->get_factor());
+					scroll_value_modified = true;
+				}
+			}
+			if (mb->get_button_index() == MouseButton::WHEEL_RIGHT) {
+				if ((mb->is_shift_pressed()) || h_scroll_hidden) {
+					scroll_bar_v->scroll(scroll_bar_v->get_page() / 8 * mb->get_factor());
+					scroll_value_modified = true;
+				} else {
+					scroll_bar_h->scroll(scroll_bar_h->get_page() / 8 * mb->get_factor());
+					scroll_value_modified = true;
+				}
+			}
+		}
 	}
 
 	if (p_event->is_pressed() && items.size() > 0) {
@@ -990,10 +1032,11 @@ void ItemList::gui_input(const Ref<InputEvent> &p_event) {
 
 	Ref<InputEventPanGesture> pan_gesture = p_event;
 	if (pan_gesture.is_valid()) {
-		scroll_bar->set_value(scroll_bar->get_value() + scroll_bar->get_page() * pan_gesture->get_delta().y / 8);
+		scroll_bar_v->set_value(scroll_bar_v->get_value() + scroll_bar_v->get_page() * pan_gesture->get_delta().y / 8);
+		scroll_bar_h->set_value(scroll_bar_h->get_value() + scroll_bar_h->get_page() * pan_gesture->get_delta().x / 8);
 	}
 
-	if (scroll_bar->get_value() != prev_scroll) {
+	if (scroll_bar_v->get_value() != prev_scroll_v || scroll_bar_h->get_value() != prev_scroll_h) {
 		accept_event(); //accept event if scroll changed
 	}
 
@@ -1049,16 +1092,23 @@ void ItemList::_notification(int p_what) {
 		case NOTIFICATION_DRAW: {
 			force_update_list_size();
 
-			int scroll_bar_minwidth = scroll_bar->get_minimum_size().x;
-			scroll_bar->set_anchor_and_offset(SIDE_LEFT, ANCHOR_END, -scroll_bar_minwidth);
-			scroll_bar->set_anchor_and_offset(SIDE_RIGHT, ANCHOR_END, 0);
-			scroll_bar->set_anchor_and_offset(SIDE_TOP, ANCHOR_BEGIN, theme_cache.panel_style->get_margin(SIDE_TOP));
-			scroll_bar->set_anchor_and_offset(SIDE_BOTTOM, ANCHOR_END, -theme_cache.panel_style->get_margin(SIDE_BOTTOM));
+			int scroll_bar_v_minwidth = scroll_bar_v->get_minimum_size().x;
+			int scroll_bar_h_minheight = scroll_bar_v->get_combined_minimum_size().y;
+			scroll_bar_v->set_anchor_and_offset(SIDE_LEFT, ANCHOR_END, -scroll_bar_v_minwidth);
+			scroll_bar_v->set_anchor_and_offset(SIDE_RIGHT, ANCHOR_END, 0);
+			scroll_bar_v->set_anchor_and_offset(SIDE_TOP, ANCHOR_BEGIN, theme_cache.panel_style->get_margin(SIDE_TOP));
+			scroll_bar_v->set_anchor_and_offset(SIDE_BOTTOM, ANCHOR_END, -theme_cache.panel_style->get_margin(SIDE_BOTTOM));
+
+			scroll_bar_h->set_anchor_and_offset(SIDE_LEFT, ANCHOR_BEGIN, theme_cache.panel_style->get_margin(SIDE_LEFT));
+			scroll_bar_h->set_anchor_and_offset(SIDE_RIGHT, ANCHOR_END, -scroll_bar_v_minwidth);
+			scroll_bar_h->set_anchor_and_offset(SIDE_TOP, ANCHOR_END, -scroll_bar_h_minheight - theme_cache.panel_style->get_margin(SIDE_TOP));
+			scroll_bar_h->set_anchor_and_offset(SIDE_BOTTOM, ANCHOR_END, -theme_cache.panel_style->get_margin(SIDE_BOTTOM));
 
 			Size2 size = get_size();
-			int width = size.width - theme_cache.panel_style->get_margin(SIDE_RIGHT);
-			if (scroll_bar->is_visible()) {
-				width -= scroll_bar_minwidth;
+			int width = size.width - theme_cache.panel_style->get_minimum_size().width;
+
+			if (scroll_bar_v->is_visible()) {
+				width -= scroll_bar_v_minwidth;
 			}
 
 			draw_style_box(theme_cache.panel_style, Rect2(Point2(), size));
@@ -1084,20 +1134,29 @@ void ItemList::_notification(int p_what) {
 			// Ensure_selected_visible needs to be checked before we draw the list.
 			if (ensure_selected_visible && current >= 0 && current < items.size()) {
 				Rect2 r = items[current].rect_cache;
-				int from = scroll_bar->get_value();
-				int to = from + scroll_bar->get_page();
+				int from_v = scroll_bar_v->get_value();
+				int to_v = from_v + scroll_bar_v->get_page();
 
-				if (r.position.y < from) {
-					scroll_bar->set_value(r.position.y);
-				} else if (r.position.y + r.size.y > to) {
-					scroll_bar->set_value(r.position.y + r.size.y - (to - from));
+				if (r.position.y < from_v) {
+					scroll_bar_v->set_value(r.position.y);
+				} else if (r.position.y + r.size.y > to_v) {
+					scroll_bar_v->set_value(r.position.y + r.size.y - (to_v - from_v));
+				}
+				int from_h = scroll_bar_h->get_value();
+				int to_h = from_h + scroll_bar_h->get_page();
+
+				if (r.position.x < from_h) {
+					scroll_bar_h->set_value(r.position.x);
+				} else if (r.position.x + r.size.x > to_h) {
+					scroll_bar_h->set_value(r.position.x + r.size.x - (to_h - from_h));
 				}
 			}
 
 			ensure_selected_visible = false;
 
 			Vector2 base_ofs = theme_cache.panel_style->get_offset();
-			base_ofs.y -= int(scroll_bar->get_value());
+			base_ofs.y -= int(scroll_bar_v->get_value());
+			base_ofs.x -= int(scroll_bar_h->get_value());
 
 			// Define a visible frame to check against and optimize drawing.
 			const Rect2 clip(-base_ofs, size);
@@ -1158,7 +1217,7 @@ void ItemList::_notification(int p_what) {
 			for (int i = first_item_visible; i < items.size(); i++) {
 				Rect2 rcache = items[i].rect_cache;
 
-				if (rcache.position.y > clip.position.y + clip.size.y) {
+				if (rcache.position.y > clip.position.y + clip.size.y && max_columns != 0) {
 					break; // done
 				}
 
@@ -1166,7 +1225,7 @@ void ItemList::_notification(int p_what) {
 					continue;
 				}
 
-				if (current_columns == 1) {
+				if (current_columns == 1 && max_columns != 0) {
 					rcache.size.width = width - rcache.position.x;
 				}
 
@@ -1373,7 +1432,7 @@ void ItemList::force_update_list_size() {
 		return;
 	}
 
-	int scroll_bar_minwidth = scroll_bar->get_minimum_size().x;
+	int scroll_bar_v_minwidth = scroll_bar_v->get_minimum_size().x;
 	Size2 size = get_size();
 	float max_column_width = 0.0;
 
@@ -1464,12 +1523,13 @@ void ItemList::force_update_list_size() {
 			}
 			items.write[i].rect_cache.position = ofs;
 
+			//max_w = MAX(max_w, items[i].rect_cache.size.x);//REMOVE_BEFORE_COMMIT
 			max_h = MAX(max_h, items[i].rect_cache.size.y);
 			ofs.x += items[i].rect_cache.size.x;
 
 			items.write[i].column = col;
 			col++;
-			if (col == current_columns) {
+			if (col == current_columns && max_columns > 0) {
 				if (i < items.size() - 1) {
 					separators.push_back(ofs.y + max_h);
 				}
@@ -1486,10 +1546,13 @@ void ItemList::force_update_list_size() {
 			}
 		}
 
-		float page = MAX(0, size.height - theme_cache.panel_style->get_minimum_size().height);
-		float max = MAX(page, ofs.y + max_h);
-		if (page >= max) {
-			fit_size -= scroll_bar_minwidth;
+		float scroll_bar_v_page = MAX(0, size.height - theme_cache.panel_style->get_minimum_size().height);
+		float scroll_bar_v_max = MAX(scroll_bar_v_page, ofs.y + max_h);
+		float scroll_bar_h_page = MAX(0, size.width - theme_cache.panel_style->get_minimum_size().width);
+		float scroll_bar_h_max = MAX(scroll_bar_h_page, ofs.x);
+
+		if (scroll_bar_v_page >= scroll_bar_v_max) {
+			fit_size -= scroll_bar_v_minwidth;
 		}
 
 		if (all_fit) {
@@ -1503,18 +1566,27 @@ void ItemList::force_update_list_size() {
 			if (auto_width) {
 				auto_width_value = max_w + theme_cache.panel_style->get_minimum_size().width;
 			}
-			scroll_bar->set_max(max);
-			scroll_bar->set_page(page);
-			if (max <= page) {
-				scroll_bar->set_value(0);
-				scroll_bar->hide();
+			scroll_bar_v->set_max(scroll_bar_v_max);
+			scroll_bar_v->set_page(scroll_bar_v_page);
+			if (scroll_bar_v_max <= scroll_bar_v_page) {
+				scroll_bar_v->set_value(0);
+				scroll_bar_v->hide();
 			} else {
 				auto_width_value += scroll_bar_minwidth;
-				scroll_bar->show();
+				scroll_bar_v->show();
 
 				if (do_autoscroll_to_bottom) {
-					scroll_bar->set_value(max);
+					scroll_bar_v->set_value(scroll_bar_v_max);
 				}
+			}
+
+			scroll_bar_h->set_max(scroll_bar_h_max);
+			scroll_bar_h->set_page(scroll_bar_h_page);
+			if (scroll_bar_h_max <= scroll_bar_h_page) {
+				scroll_bar_h->set_value(0);
+				scroll_bar_h->hide();
+			} else {
+				scroll_bar_h->show();
 			}
 			break;
 		}
@@ -1555,7 +1627,8 @@ String ItemList::_atr(int p_idx, const String &p_text) const {
 int ItemList::get_item_at_position(const Point2 &p_pos, bool p_exact) const {
 	Vector2 pos = p_pos;
 	pos -= theme_cache.panel_style->get_offset();
-	pos.y += scroll_bar->get_value();
+	pos.y += scroll_bar_v->get_value();
+	pos.x += scroll_bar_h->get_value();
 
 	if (is_layout_rtl()) {
 		pos.x = get_size().width - pos.x;
@@ -1567,7 +1640,7 @@ int ItemList::get_item_at_position(const Point2 &p_pos, bool p_exact) const {
 	for (int i = 0; i < items.size(); i++) {
 		Rect2 rc = items[i].rect_cache;
 
-		if (i % current_columns == current_columns - 1) {
+		if (i % current_columns == current_columns - 1 && max_columns != 0) {
 			rc.size.width = get_size().width - rc.position.x; // Make sure you can still select the last item when clicking past the column.
 		}
 
@@ -1593,7 +1666,7 @@ bool ItemList::is_pos_at_end_of_items(const Point2 &p_pos) const {
 
 	Vector2 pos = p_pos;
 	pos -= theme_cache.panel_style->get_offset();
-	pos.y += scroll_bar->get_value();
+	pos.y += scroll_bar_v->get_value();
 
 	if (is_layout_rtl()) {
 		pos.x = get_size().width - pos.x;
@@ -1907,6 +1980,7 @@ void ItemList::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("ensure_current_is_visible"), &ItemList::ensure_current_is_visible);
 
 	ClassDB::bind_method(D_METHOD("get_v_scroll_bar"), &ItemList::get_v_scroll_bar);
+	ClassDB::bind_method(D_METHOD("get_h_scroll_bar"), &ItemList::get_h_scroll_bar);
 
 	ClassDB::bind_method(D_METHOD("set_text_overrun_behavior", "overrun_behavior"), &ItemList::set_text_overrun_behavior);
 	ClassDB::bind_method(D_METHOD("get_text_overrun_behavior"), &ItemList::get_text_overrun_behavior);
@@ -1978,9 +2052,13 @@ void ItemList::_bind_methods() {
 }
 
 ItemList::ItemList() {
-	scroll_bar = memnew(VScrollBar);
-	add_child(scroll_bar, false, INTERNAL_MODE_FRONT);
-	scroll_bar->connect(SceneStringName(value_changed), callable_mp(this, &ItemList::_scroll_changed));
+	scroll_bar_v = memnew(VScrollBar);
+	add_child(scroll_bar_v, false, INTERNAL_MODE_FRONT);
+	scroll_bar_v->connect(SceneStringName(value_changed), callable_mp(this, &ItemList::_scroll_changed));
+
+	scroll_bar_h = memnew(HScrollBar);
+	add_child(scroll_bar_h, false, INTERNAL_MODE_FRONT);
+	scroll_bar_h->connect(SceneStringName(value_changed), callable_mp(this, &ItemList::_scroll_changed));
 
 	connect(SceneStringName(mouse_exited), callable_mp(this, &ItemList::_mouse_exited));
 
